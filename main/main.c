@@ -30,22 +30,21 @@ void process_byte(uint8_t c) {
         
         int cmd_in = 0;
         unsigned long delay_us = 0;
+        unsigned long prep_led_us = 0;
         unsigned long long target_mask = 0;
 
-        int args = sscanf(packet_buf, "%d,%lu,%llx", &cmd_in, &delay_us, &target_mask);
+        int args = sscanf(packet_buf, "%d,%lu,%lu,%llx", &cmd_in, &delay_us, &prep_led_us, &target_mask);
 
-        if (args == 3) {
+        if (args == 4) {
             bt_sender_config_t burst_cfg = {
                 .cmd_type = (uint8_t)cmd_in,
                 .delay_us = delay_us,
+                .prep_led_us = prep_led_us,
                 .target_mask = (uint64_t)target_mask
             };
-            int sent = bt_sender_execute_burst(&burst_cfg);
-            
-            // 回傳 ACK
-            char resp[64];
-            int len = snprintf(resp, sizeof(resp), "ACK:OK,SENT:%d\n", sent);
-            uart_write_bytes(UART_PORT_NUM, resp, len);
+            const char* ack_msg = "ACK:OK\n";
+            uart_write_bytes(UART_PORT_NUM, ack_msg, strlen(ack_msg));
+            bt_sender_execute_burst(&burst_cfg);
         } else {
             // 解析失敗 (可能是雜訊，或是格式不對)
             // 這裡回傳 NAK，讓 Python 知道要重傳
@@ -94,17 +93,12 @@ void app_main(void)
 
     while (1) {
         // 3. 直接從硬體讀取
-        int len = uart_read_bytes(UART_PORT_NUM, data, BUF_SIZE, 20 / portTICK_PERIOD_MS);
+        int len = uart_read_bytes(UART_PORT_NUM, data, BUF_SIZE, 20 / portTICK_PERIOD_MS); // TODO: fix timeout
 
         if (len > 0) {
             for (int i = 0; i < len; i++) {
                 process_byte(data[i]);
             }
-        }
-        
-        // 避免 Watchdog 叫
-        if (len == 0) {
-            vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
     
